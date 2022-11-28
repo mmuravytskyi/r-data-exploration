@@ -55,11 +55,6 @@ box_office$box_office_other <- str_remove_all(box_office$box_office_other, ",")
 box_office$box_office_worldwide <-
     str_remove_all(box_office$box_office_worldwide, ",")
 
-# change column types
-box_office <- box_office %>% mutate(across(c("budget",
-    "box_office_opening_weekend_us", "box_office_us", "box_office_other",
-    "box_office_worldwide"), as.numeric))
-
 box_office$release_date <- as.Date(box_office$release_date, "%B %d, %Y")
 
 # parse reviews columns
@@ -71,6 +66,14 @@ reviews$metacritic_score <-
     sapply(str_extract_all(reviews$metacritic, "\\d+"), "[", 1)
 reviews$metacritic_num_reviews <-
     sapply(str_extract_all(reviews$metacritic, "\\d+"), "[", 2)
+
+data <- box_office %>% left_join(reviews)
+
+# change column types
+data <- data %>% mutate(across(c("budget",
+    "box_office_opening_weekend_us", "box_office_us", "box_office_other",
+    "box_office_worldwide", "rotten_tomatoes_score",
+    "rotten_tomatoes_num_reviews", "metacritic_score"), as.numeric))
 
 # IDEAS:
 # - correlation between scores and money spent
