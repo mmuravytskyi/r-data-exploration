@@ -1,6 +1,7 @@
 library(rvest)
 library(dplyr)
 library(stringr)
+library(ggplot2)
 
 # SCRAP THIS THING
 
@@ -9,6 +10,8 @@ library(stringr)
 # //*[@id="mw-content-text"]/div[1]/table[15]
 # Critical and public responce:
 # //*[@id="mw-content-text"]/div[1]/table[16]
+# Feature films:
+# //*[@id="mw-content-text"]/div[1]/table[1]
 
 ### {bash}
 # curl https://en.wikipedia.org/wiki/List_of_films_based_on_Marvel_Comics_publications -o marvel_wiki.html
@@ -16,7 +19,6 @@ library(stringr)
 
 p <- read_html("marvel_wiki.html")
 tables <- p %>% html_nodes(".wikitable")
-
 
 # DATA CLEANING
 box_office <- tables[15] %>% html_table() %>% as.data.frame() %>%
@@ -75,5 +77,22 @@ data <- data %>% mutate(across(c("budget",
     "box_office_worldwide", "rotten_tomatoes_score",
     "rotten_tomatoes_num_reviews", "metacritic_score"), as.numeric))
 
+# budget in millions
+data <- data %>% mutate(budget = budget * 1e+6)
+
+g <- data %>% ggplot(aes(size = 4)) +
+    geom_point(aes(x = metacritic_score, y = box_office_worldwide,
+                    colour = "blue")) +
+    # geom_smooth(aes(x = metacritic_score, y = budget, colour = "blue"),
+                    #  method = lm) +
+    geom_point(aes(x = rotten_tomatoes_score, y = box_office_worldwide,
+                colour = "red")) +
+    # geom_smooth(aes(x = rotten_tomatoes_score, y = budget, colour = "red"),
+                    #  method = lm) +
+     ylab("box office") + theme_light()
+
+show(g)
+
 # IDEAS:
 # - correlation between scores and money spent
+# - correlation between release date and box office
