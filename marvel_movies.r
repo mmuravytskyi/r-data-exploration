@@ -1,6 +1,7 @@
 library(rvest)
 library(dplyr)
 library(stringr)
+library(tibble)
 library(ggplot2)
 
 # SCRAP THIS THING
@@ -21,9 +22,9 @@ p <- read_html("marvel_wiki.html")
 tables <- p %>% html_nodes(".wikitable")
 
 # DATA CLEANING
-box_office <- tables[15] %>% html_table() %>% as.data.frame() %>%
+box_office <- tables[15] %>% html_table() %>% as.data.frame() %>% tibble() %>%
     filter(!row_number() %in% c(1))
-reviews <- tables[16] %>% html_table() %>% as.data.frame() %>%
+reviews <- tables[16] %>% html_table() %>% as.data.frame() %>% tibble() %>%
     filter(row_number() != 1)
 
 # remove rows with stats
@@ -79,10 +80,35 @@ box_office <- box_office %>% mutate(across(c("budget",
 reviews <- reviews %>% mutate(across(c("rotten_tomatoes_score",
     "rotten_tomatoes_num_reviews", "metacritic_score"), as.numeric))
 
+# fix some missing data
+# Morbius has a string parsing error, hardcoded data
+box_office <- box_office %>%
+              mutate(budget = replace(budget, title == "Morbius", 79))
+
+# Inhumans has NAN, so populate with a trimmed average
+budget_avg <- mean(box_office$budget, na.rm = TRUE, trim = 0.1) %>% round()
+box_office <- box_office %>%
+              mutate(budget = replace(budget, title == "Inhumans", budget_avg))
+
+# Fixing film titles in order to merge both tables
+reviews <- reviews %>% mutate(title =
+           replace(title, title == "Marvel's The Avengers", "The Avengers"))
+reviews <- reviews %>% mutate(title =
+           replace(title, title == "The Punisher (2004)", "The Punisher"))
+box_office <- box_office %>% mutate(title =
+              replace(title,
+                      title == "Fantastic Four" & release_date == "2005-07-08",
+                      "Fantastic Four (2005)"))
+box_office <- box_office %>% mutate(title =
+              replace(title,
+                      title == "Fantastic Four" & release_date == "2015-08-07",
+                      "Fantastic Four (2015)"))
+
+
 # budget in millions
 box_office <- box_office %>% mutate(budget = budget * 1e+6)
 
-data <- box_office %>% left_join(reviews)
+data <- box_office %>% inner_join(reviews, by = "title")
 
 g <- data %>% ggplot(aes(size = 4)) +
     geom_point(aes(x = metacritic_score, y = box_office_worldwide,
@@ -96,8 +122,6 @@ g <- data %>% ggplot(aes(size = 4)) +
      ylab("box office") + theme_light()
 
 show(g)
-
-(box_office %>% slice(which(box_office$title == "Morbius")))$budget
 
 # IDEAS:
 # - correlation between scores and money spent

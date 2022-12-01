@@ -15,6 +15,7 @@ curl https://en.wikipedia.org/wiki/List_of_films_based_on_Marvel_Comics_publicat
 library(rvest) 
 library(dplyr)
 library(stringr)
+library(tibble)
 library(ggplot2)
 ```
 
@@ -24,6 +25,8 @@ tables <- p %>% html_nodes(".wikitable")
 summary(tables)
 ```
 ### Scraping Wikipedia
+![Pobeda](static/box_office.png "a title") \
+
 Xpaths of interesting tables with data: \
 
 `//*[@id="mw-content-text"]/div[1]/table[1]` : Feature films \
@@ -33,10 +36,8 @@ Xpaths of interesting tables with data: \
 Read as a data frame and skip the first row 
 as the tables have two-level headers.
 ```{r}
-box_office <- tables[15] %>% html_table() %>% as.data.frame() %>%
-    filter(!row_number() %in% c(1))
-reviews <- tables[16] %>% html_table() %>% as.data.frame() %>%
-    filter(row_number() != 1)
+box_office <- tables[15] %>% html_table() %>% as.data.frame() %>% tibble() %>% filter(!row_number() %in% c(1))
+reviews <- tables[16] %>% html_table() %>% as.data.frame() %>% tibble() %>% filter(row_number() != 1)
 ```
 
 Additionally remove the last two rows, they contains taotal and average values.
@@ -61,22 +62,16 @@ we need to clean it up from all dollar signs and commas.
 PS. There might be a better way to achive this, but I didn't find it.
 ```{r}
 box_office$budget <- str_remove_all(box_office$budget, "\\$")
-box_office$box_office_opening_weekend_us <-
-    str_remove_all(box_office$box_office_opening_weekend_us, "\\$")
-box_office$box_office_us <-
-    str_remove_all(box_office$box_office_us, "\\$")
-box_office$box_office_other <-
-    str_remove_all(box_office$box_office_other, "\\$")
-box_office$box_office_worldwide <-
-    str_remove_all(box_office$box_office_worldwide, "\\$")
+box_office$box_office_opening_weekend_us <- str_remove_all(box_office$box_office_opening_weekend_us, "\\$")
+box_office$box_office_us <- str_remove_all(box_office$box_office_us, "\\$")
+box_office$box_office_other <- str_remove_all(box_office$box_office_other, "\\$")
+box_office$box_office_worldwide <- str_remove_all(box_office$box_office_worldwide, "\\$")
 
 box_office$budget <- str_remove_all(box_office$budget, ",")
-box_office$box_office_opening_weekend_us <-
-    str_remove_all(box_office$box_office_opening_weekend_us, ",")
+box_office$box_office_opening_weekend_us <- str_remove_all(box_office$box_office_opening_weekend_us, ",")
 box_office$box_office_us <- str_remove_all(box_office$box_office_us, ",")
 box_office$box_office_other <- str_remove_all(box_office$box_office_other, ",")
-box_office$box_office_worldwide <-
-    str_remove_all(box_office$box_office_worldwide, ",")
+box_office$box_office_worldwide <- str_remove_all(box_office$box_office_worldwide, ",")
 ```
 
 In the case of reviews we need to parse the string values in column.
@@ -104,14 +99,42 @@ reviews <- reviews %>% mutate(across(c("rotten_tomatoes_score",
     "rotten_tomatoes_num_reviews", "metacritic_score"), as.numeric))
 ```
 
+Fix some missing data:
+Morbius has a string parsing error, hardcoded data
+```{r}
+box_office <- box_office %>% mutate(budget = replace(budget, title == "Morbius", 79))
+```
+
+Inhumans has NAN, so populate with a trimmed average
+```{r}
+budget_avg <- mean(box_office$budget, na.rm = TRUE, trim = 0.1) %>% round()
+box_office <- box_office %>% mutate(budget = replace(budget, title == "Inhumans", budget_avg))
+```
+
+Fixing film titles in order to merge both tables
+```{r}
+reviews <- reviews %>% mutate(title = replace(title, title == "Marvel's The Avengers", "The Avengers"))
+reviews <- reviews %>% mutate(title = replace(title, title == "The Punisher (2004)", "The Punisher"))
+box_office <- box_office %>% mutate(title =
+              replace(title,
+                      title == "Fantastic Four" & release_date == "2005-07-08",
+                      "Fantastic Four (2005)"))
+box_office <- box_office %>% mutate(title =
+              replace(title,
+                      title == "Fantastic Four" & release_date == "2015-08-07",
+                      "Fantastic Four (2015)"))
+```
+
+
+
 Also `budget` column is in $ millions, so we need to change it to fit the rest.
 ```{r}
 box_office <- box_office %>% mutate(budget = budget * 1e+6)
 ```
 
-Glue this thing together.
+Glue everything together.
 ```{r}
-data <- box_office %>% left_join(reviews)
+data <- box_office %>% inner_join(reviews, by = "title")
 ```
 
 ### LETSDRAW
