@@ -1,0 +1,160 @@
+---
+title: "Projekt 2: Simpson's Paradox"
+output: pdf_document
+---
+
+```{r include = FALSE}
+library(tidyverse)
+library(ranger)
+library(e1071)
+```
+
+### Generowanie sztucznych danych
+
+```{r}
+samples_num <- 100
+
+data_male <- tibble(
+  dosage = rnorm(samples_num, mean = 100, sd = 10),
+  gender = 0) %>%
+  mutate(recovery_prob =
+           -1 / 7 * dosage + 70 + rnorm(samples_num,  mean = 0, sd = 2),
+         recovery_prob_raw = -1 / 7 * dosage + 70
+  )
+
+data_female <- tibble(
+  dosage = rnorm(samples_num, mean = 50, sd = 10),
+  gender = 1) %>%
+  mutate(recovery_prob =
+           -1 / 7 * dosage + 40 + rnorm(samples_num,  mean = 0, sd = 2),
+         recovery_prob_raw = -1 / 7 * dosage + 40
+  )
+
+data <- rows_insert(data_male, data_female, by = "dosage") %>%
+  mutate(gender = as.factor(gender))
+
+sample_frac(data, 0.1)
+```
+
+# Wizualizacja
+
+```{r}
+gg <- ggplot(data = data, aes(x = dosage, y = recovery_prob, colour = gender)) +
+  geom_point() + geom_smooth(method = "lm", formula = y ~ x) +
+  labs(
+    title = "Simpson's Paradox in Clinical Studies",
+    x = "Dosage [mg]",
+    y = "Recovery Probability [%]",
+    colour = "Legend"
+  ) +
+  geom_smooth(
+    inherit.aes = FALSE,
+    data = select(data, c("dosage", "recovery_prob")),
+    aes(x = dosage, y = recovery_prob),
+    method = "lm", formula = y ~ x, se = FALSE) +
+  scale_color_manual(
+    labels = c("Male", "Female"),
+    values = c("blue", "#f055e3")
+  ) + theme_bw()
+show(gg)
+```
+# Model
+
+```{r}
+data_train <- sample_frac(data, 0.8)
+data_test <- anti_join(data, data_train, by = c("dosage", "gender", "recovery_prob"))
+```
+
+# Las losowy
+
+```{r}
+rf <- data_train %>% ranger(formula = recovery_prob ~ . - recovery_prob_raw, num.trees = 200)
+predictions <- predict(rf, data = data_test)
+rf
+```
+
+# SVM radial
+```{r}
+s <- svm(formula = recovery_prob ~ . - recovery_prob_raw, 
+         data = data_train,
+         kernel = "polynomial",
+         degree = 2, coef0 = 1)
+predictions_svm <- predict(s, data_test)
+summary(s)
+```
+# Walidacja modelu
+
+```{r}
+data_test <- data_test %>%
+  mutate(
+    preds_rf = predictions$predictions,
+    preds_svm = predictions_svm,
+    err_rf = recovery_prob - preds_rf,
+    err_svm = recovery_prob - preds_svm
+  )
+
+gg <- data_test %>%
+  ggplot() +
+  geom_point(aes(x = dosage, y = recovery_prob, colour = gender)) +
+  geom_point(aes(x = dosage, y = preds_rf, colour = "black")) +
+  geom_point(aes(x = dosage, y = preds_svm, colour = "gray")) +
+  labs(
+    title = "Models: Random Forest, SVM",
+    x = "Dosage [mg]",
+    y = "Recovery Probability [%]",
+    colour = "Legend",
+  ) + scale_color_manual(
+    labels = c("Male", "Female","Predictions RF", "Predictions SVM"),
+    values = c("blue", "#f055e3", "black", "gray")
+  ) + theme_bw()
+show(gg)
+```
+
+```{r}
+gg <- data_test %>%
+  ggplot() +
+  geom_point(aes(x = dosage, y = recovery_prob_raw, colour = "green")) +
+  geom_point(aes(x = dosage, y = preds_rf, colour = "black")) +
+  geom_point(aes(x = dosage, y = preds_svm, colour = "gray")) +
+  labs(
+    title = "Models: Random Forest, SVM with noiseless data",
+    x = "Dosage [mg]",
+    y = "Recovery Probability [%]",
+    colour = "Legend",
+  ) + scale_color_manual(
+    labels = c("Raw data","Predictions RF", "Predictions SVM"),
+    values = c("green", "black", "gray")
+  ) + theme_bw()
+show(gg)
+```
+
+
+**MSE dla danych treningowych**
+
+```{r echo = FALSE}
+rf$prediction.error
+```
+
+**MSE dla danych testowych, Las Losowy**
+
+```{r echo = FALSE}
+mean(data_test$err_rf^2)
+```
+
+**MSE dla danych testowych, SVM**
+
+```{r echo = FALSE}
+mean(data_test$err_svm^2)
+```
+
+**MSE dla danych niezaszumionych, Las Losowy**
+
+```{r echo = FALSE}
+mean((data_test$recovery_prob_raw - data_test$preds_rf)^2)
+```
+
+**MSE dla danych niezaszumionych, SVM**
+
+```{r echo = FALSE}
+mean((data_test$recovery_prob_raw - data_test$preds_svm)^2)
+```
